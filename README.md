@@ -87,7 +87,6 @@ git clone https://github.com/Rayan-and-beyond/cleanup-chromes.git && cd cleanup-
 ./skills/cleanup-chromes/cleanup-chromes.sh delete   # removes only what passed every check
 ```
 
-Codex runs commands in an approval sandbox: the scan is read-only — approve it, review the findings, then approve `delete`.
 
 
 ## 📊 What you get
