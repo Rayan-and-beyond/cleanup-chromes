@@ -286,6 +286,10 @@ t10_cli_contract_unchanged() {
 
 t11_clone_guard_ignores_cmdline_substring_decoys() {
   note "T11: clone owner guard uses EXACT process names — a decoy whose args merely contain the name must not trigger it"
+  if pgrep -ix "Codex" >/dev/null 2>&1; then
+    note "  (skipped: the real Codex app is running — a fake codex clone would be correctly guarded as IN USE)"
+    return
+  fi
   if ! script_supports_glob_hook; then
     record_blocked "T11 (script lacks CLEANUP_CHROMES_CLONE_GLOB)"
     return
