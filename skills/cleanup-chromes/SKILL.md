@@ -1,5 +1,6 @@
 ---
 name: cleanup-chromes
+license: MIT
 description: Use on macOS when browser automation or coding agents have consumed disk space through Playwright, Puppeteer, Cypress, Selenium, Chromium, chrome-devtools-mcp caches, or transient code_sign_clone copies. Trigger for agent browser leftovers, oversized browser caches, test-browser disk usage, low disk space, or no-space-left-on-device errors.
 ---
 

@@ -46,7 +46,7 @@ npx skills add Rayan-and-beyond/cleanup-chromes -a claude-code -g
 Installs to `~/.claude/skills/cleanup-chromes`. Prefer manual?
 
 ```bash
-git clone https://github.com/Rayan-and-beyond/cleanup-chromes.git ~/.claude/skills/cleanup-chromes
+git clone https://github.com/Rayan-and-beyond/cleanup-chromes.git /tmp/cc && cp -r /tmp/cc/skills/cleanup-chromes ~/.claude/skills/ && rm -rf /tmp/cc
 ```
 
 Then just ask naturally — *"my disk is almost full, run a cleanup-chromes scan"* — or explicitly *"use the cleanup-chromes skill"*. Claude will always show you the scan first and ask before deleting anything.
@@ -60,7 +60,7 @@ npx skills add Rayan-and-beyond/cleanup-chromes -a codex -g
 Installs to `~/.codex/skills/cleanup-chromes`. Prefer manual?
 
 ```bash
-git clone https://github.com/Rayan-and-beyond/cleanup-chromes.git ~/.codex/skills/cleanup-chromes
+git clone https://github.com/Rayan-and-beyond/cleanup-chromes.git /tmp/cc && cp -r /tmp/cc/skills/cleanup-chromes ~/.codex/skills/ && rm -rf /tmp/cc
 ```
 
 Invoke with `$cleanup-chromes` or browse via `/skills`. It also triggers automatically when you describe disk-space problems. Tip: Codex runs commands in an approval sandbox — approve the `scan` freely (read-only), review its findings, then approve `delete`.
@@ -75,8 +75,8 @@ It's just a safe bash script:
 
 ```bash
 git clone https://github.com/Rayan-and-beyond/cleanup-chromes.git && cd cleanup-chromes
-./cleanup-chromes.sh scan     # read-only, shows what's reclaimable
-./cleanup-chromes.sh delete   # removes only what passed every safety check
+./skills/cleanup-chromes/cleanup-chromes.sh scan     # read-only, shows what's reclaimable
+./skills/cleanup-chromes/cleanup-chromes.sh delete   # removes only what passed every safety check
 ```
 
 ### Verify it works

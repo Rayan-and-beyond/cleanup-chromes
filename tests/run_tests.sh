@@ -16,7 +16,7 @@
 # Exit codes: 0 = all tests passed/skipped-safely, 1 = at least one failure.
 set -u
 
-SCRIPT="$(cd "$(dirname "$0")/.." && pwd)/cleanup-chromes.sh"
+SCRIPT="$(cd "$(dirname "$0")/.." && pwd)/skills/cleanup-chromes/cleanup-chromes.sh"
 BASH_BIN="/bin/bash"
 
 pass=0; fail=0; blocked=0
