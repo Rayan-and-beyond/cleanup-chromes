@@ -31,7 +31,7 @@ GitHub CLI:
 gh skill install Rayan-and-beyond/cleanup-chromes
 ```
 
-### 🟠 Claude Code
+### Claude Code
 
 ```bash
 npx skills add Rayan-and-beyond/cleanup-chromes -a claude-code -g
@@ -51,7 +51,7 @@ Manual install:
 ```bash
 git clone https://github.com/Rayan-and-beyond/cleanup-chromes.git /tmp/cc && cp -r /tmp/cc/skills/cleanup-chromes ~/.claude/skills/ && rm -rf /tmp/cc
 ```
-### 🟢 Codex
+### Codex
 
 ```text
 /skill-installer cleanup-chromes from Rayan-and-beyond/cleanup-chromes
