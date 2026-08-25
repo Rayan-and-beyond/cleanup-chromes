@@ -1,19 +1,37 @@
 # cleanup-chromes
 
-[![skills.sh](https://skills.sh/b/Rayan-and-beyond/cleanup-chromes)](https://skills.sh/Rayan-and-beyond/cleanup-chromes)
+A macOS Agent Skill for safely reclaiming disk space left behind by browser automation and coding agents.
 
-A macOS Agent Skill that safely reclaims disk space left behind by browser automation and AI coding agents. It deletes throwaway test-browser caches (Playwright, Puppeteer, Cypress, Selenium, chrome-devtools-mcp) and macOS `code_sign_clone` leftovers — often **10–60+ GB** worth. Everything removed is regenerable; your real browser profiles are never touched.
+It targets known throwaway caches from Playwright, Puppeteer, Cypress, Selenium, Chromium, and chrome-devtools-mcp, plus transient macOS `*.code_sign_clone` copies. Real browser profiles and `/Applications` are hard-refused.
 
-## Sound familiar?
+## Is your Mac's disk space mysteriously disappearing?
 
 If you ended up here after seeing any of these, you're in the right place:
 
-- DaisyDisk / `du` showing giant folders like `/private/var/folders/.../X/com.google.Chrome.code_sign_clone`
-- macOS Storage settings blaming tens of GBs on vague **"System Data"**
-- `~/Library/Caches/ms-playwright`, `~/.cache/puppeteer`, or `~/Library/Caches/Cypress` quietly holding many GB of browser builds
-- `Your startup disk is almost full` after heavy agent work (Claude Code, Codex, Cursor, …)
+- DaisyDisk / OmniDiskSweeper / `du` showing giant folders like
+  `/private/var/folders/.../X/com.google.Chrome.code_sign_clone`
+  or `com.openai.codex.code_sign_clone`
+- macOS **Storage settings** blaming tens of GBs on vague **"System Data"**
+- `~/Library/Caches/ms-playwright`, `~/.cache/puppeteer`, or `~/Library/Caches/Cypress`
+  quietly holding many gigabytes of downloaded browser builds
+- `Your startup disk is almost full` / `no space left on device` after heavy use of
+  AI coding agents (Claude Code, Codex, Cursor, ...) that drive browsers
 
-## Install — Claude Code
+These leftovers can easily reach **10–60+ GB**. Everything this skill deletes is regenerable — tools re-download what they need on next use.
+
+## Install
+
+[![skills.sh](https://skills.sh/b/Rayan-and-beyond/cleanup-chromes)](https://skills.sh/Rayan-and-beyond/cleanup-chromes)
+
+### One command, any agent
+
+The [Agent Skills CLI](https://github.com/vercel-labs/skills) detects which agents you have installed and offers to install into each:
+
+```bash
+npx skills add Rayan-and-beyond/cleanup-chromes
+```
+
+### Claude Code
 
 ```bash
 npx skills add Rayan-and-beyond/cleanup-chromes -a claude-code -g
@@ -25,34 +43,67 @@ Installs to `~/.claude/skills/cleanup-chromes`. Prefer manual?
 git clone https://github.com/Rayan-and-beyond/cleanup-chromes.git /tmp/cc && cp -r /tmp/cc/skills/cleanup-chromes ~/.claude/skills/ && rm -rf /tmp/cc
 ```
 
-Then just ask naturally — *"my disk is almost full, run a cleanup-chromes scan"* — or explicitly *"use the cleanup-chromes skill"*. It always shows you the scan first and asks before deleting anything.
+Then just ask naturally — *"my disk is almost full, run a cleanup-chromes scan"* — or explicitly *"use the cleanup-chromes skill"*. Claude will always show you the scan first and ask before deleting anything.
 
-## Install — Codex CLI
+### Codex CLI
 
 ```bash
 npx skills add Rayan-and-beyond/cleanup-chromes -a codex -g
 ```
 
-Installs to `~/.codex/skills/cleanup-chromes`. Prefer manual? Same as above but copy into `~/.codex/skills/`.
+Installs to `~/.codex/skills/cleanup-chromes`. Prefer manual?
 
-Invoke with `$cleanup-chromes`, pick it from `/skills`, or just describe the disk problem — it activates automatically. Tip: Codex runs commands in an approval sandbox — the scan is read-only, so approve it freely, review findings, then approve `delete`.
+```bash
+git clone https://github.com/Rayan-and-beyond/cleanup-chromes.git /tmp/cc && cp -r /tmp/cc/skills/cleanup-chromes ~/.codex/skills/ && rm -rf /tmp/cc
+```
 
-## Usage without an agent
+Invoke with `$cleanup-chromes` or browse via `/skills`. It also triggers automatically when you describe disk-space problems. Tip: Codex runs commands in an approval sandbox — approve the `scan` freely (read-only), review its findings, then approve `delete`.
 
-It's also just a safe bash script:
+### Other agents
+
+Anything that reads the open [Agent Skills standard](https://agentskills.io) works — copy this folder into that agent's skills directory.
+
+### No agent at all
+
+It's just a safe bash script:
 
 ```bash
 git clone https://github.com/Rayan-and-beyond/cleanup-chromes.git && cd cleanup-chromes
-./skills/cleanup-chromes/cleanup-chromes.sh scan      # read-only, lists what's reclaimable
-./skills/cleanup-chromes/cleanup-chromes.sh delete    # removes only what passed every check
+./skills/cleanup-chromes/cleanup-chromes.sh scan     # read-only, shows what's reclaimable
+./skills/cleanup-chromes/cleanup-chromes.sh delete   # removes only what passed every safety check
 ```
 
-Exit codes: `0` success · `1` one or more deletions failed · `2` bad usage.
-The final line is machine-readable: `SUMMARY mode=<scan|delete> freed_mb=<n> deleted=<n> skipped=<n> failed=<n>`
+### Verify it works
 
-## What it deletes
+Run a **scan** (never deletes anything) and check for the `SUMMARY mode=scan ...` line at the end. Exit code `0` means all good.
 
-| Location | Left by |
+## What it does
+
+The skill ships with `cleanup-chromes.sh`, which has two modes:
+
+```bash
+# Read-only scan
+./cleanup-chromes.sh scan
+
+# Delete only items that pass the safety checks
+./cleanup-chromes.sh delete
+```
+
+Before deleting, the script:
+
+- considers only hardcoded throwaway locations
+- hard-refuses real Chrome, Brave, and Edge profiles plus anything in `/Applications`
+- allows `code_sign_clones` only for a verified bundle-ID allowlist — anything unknown is refused (default-deny)
+- checks open files with `lsof`
+- checks known long-lived browser-tool processes, plus each clone's owner app (a running Chromium/Electron app can own an active clone without holding files open, so `lsof` alone is not sufficient)
+- re-checks each target immediately before deletion using the same classification as the scan
+- reports actual free-space change with `df`
+
+The default mode is `scan`, so running the script with no argument is non-destructive.
+
+## Targets
+
+| Location | Usually left by |
 |---|---|
 | `~/Library/Caches/ms-playwright` | Playwright |
 | `~/Library/Caches/ms-playwright-go` | Playwright Go |
@@ -63,33 +114,68 @@ The final line is machine-readable: `SUMMARY mode=<scan|delete> freed_mb=<n> del
 | `~/.cache/selenium` | Selenium |
 | `~/.cache/chrome-devtools-mcp` | chrome-devtools-mcp |
 | `~/Library/Caches/chromium` | Chromium-based test tooling |
-| `/private/var/folders/*/*/X/*.code_sign_clone` | transient macOS code-sign clones |
+| `/private/var/folders/*/*/X/*.code_sign_clone` | transient macOS code-sign clones (allowlisted bundle IDs only) |
+
+Everything removed from the browser-cache targets can be regenerated by the relevant tool when needed again. `code_sign_clone` entries are transient macOS temporary copies.
 
 ### Clone allowlist
 
-macOS names each clone root after the owning app's bundle identifier, so only these exact bundle IDs are eligible for cleanup — and only while their app is not running:
+macOS names each clone root after the owning app's bundle identifier, so the script allowlists exact bundle IDs and maps them to an exact process-name check (`pgrep -x` — a command that merely *mentions* e.g. "Codex" in its arguments does not count as Codex running):
 
-| Bundle ID | Owner |
+| Bundle ID | Owner | Process guard |
+|---|---|---|
+| `com.google.Chrome` | Google Chrome | `Google Chrome` |
+| `com.openai.codex` | Codex | `Codex` |
+| `com.openai.chat` | ChatGPT | `ChatGPT` |
+| `com.brave.Browser` | Brave Browser | `Brave Browser` |
+| `com.microsoft.edgemac` | Microsoft Edge | `Microsoft Edge` |
+
+Any clone root with an unknown bundle ID is refused and reported — never deleted automatically. This is deliberate: it keeps the behavior auditable and future-proof without guessing at app ownership.
+
+## Safety notes
+
+`du` can make APFS `code_sign_clone` directories look much larger than the physical space they consume because copy-on-write clones share blocks. Use the script's `Freed ~N MB` result as the useful number.
+
+A tiny check-then-delete race is still theoretically possible if a process starts at exactly the wrong instant. The script minimizes this by refreshing its in-use checks immediately before each removal.
+
+## Output
+
+Exit codes:
+
+| Code | Meaning |
 |---|---|
-| `com.google.Chrome` | Google Chrome |
-| `com.openai.codex` | Codex |
-| `com.openai.chat` | ChatGPT |
-| `com.brave.Browser` | Brave Browser |
-| `com.microsoft.edgemac` | Microsoft Edge |
+| `0` | Success |
+| `1` | One or more deletions failed |
+| `2` | Invalid argument |
 
-Any clone root with a different bundle ID is refused and reported — never deleted automatically.
+The final line is machine-readable:
 
-## Safety guarantees
+```text
+SUMMARY mode=<scan|delete> freed_mb=<n> deleted=<n> skipped=<n> failed=<n>
+```
 
-Before anything is deleted, the script:
+Deletion results are also appended to `cleanup.log`, which is ignored by Git.
 
-- considers only the hardcoded throwaway locations above
-- hard-refuses real Chrome, Brave, and Edge profiles plus everything in `/Applications`
-- refuses unknown clone owners by default (default-deny)
-- checks open files with `lsof` and running owner apps with exact process-name matching (`pgrep -x`)
-- re-runs all checks immediately before each individual deletion
-- reports the *actual* freed space via `df` — APFS makes `du` overstate clone sizes
+## Requirements
 
-Requires macOS with stock bash (`/bin/bash` 3.2 works). MIT — see [LICENSE](./LICENSE).
+- macOS
+- Bash (stock `/bin/bash` 3.2 is fully supported; the test suite targets it specifically)
+- standard macOS utilities including `lsof`, `du`, `df`, and `pgrep`
 
-Tests: `/bin/bash tests/run_tests.sh`. New cleanup targets must be regenerable caches or verified clone owners (real bundle ID + process name proven with `pgrep -x`).
+## Development
+
+Run the test suite with **stock macOS bash** (newer Homebrew bash will not reproduce the Bash 3.2 empty-array bugs):
+
+```bash
+/bin/bash tests/run_tests.sh
+```
+
+Scan-mode tests are read-only. Delete-mode tests self-block unless the script-under-test supports the `CLEANUP_CHROMES_CLONE_GLOB` isolation override, so running the suite against an un-hooked older revision can never touch real data. Integration tests create fake clone roots under harmless bundle IDs in your per-user temp dir and clean them up on exit.
+
+## Contributing
+
+Keep new cleanup targets explicit and narrow. A target should be a known regenerable cache or transient clone, and it should follow the same in-use checks and profile protections already used by the script. New clone entries require both a verified owning bundle ID and its exact process name — verify the latter with `pgrep -x "<name>"` while the app is running before adding it.
+
+## License
+
+MIT. See [LICENSE](./LICENSE).
