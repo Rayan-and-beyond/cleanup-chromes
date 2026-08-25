@@ -21,7 +21,7 @@ These leftovers can easily reach **10–60+ GB**. Everything this skill deletes 
 
 ## Install
 
-[![skills.sh](https://skills.sh/b/Rayan-and-beyond/cleanup-chromes)](https://skills.sh/Rayan-and-beyond/cleanup-chromes)
+[![Agent Skill](https://img.shields.io/badge/agent_skill-macos_cleanup-2ea44f)](https://skills.sh/Rayan-and-beyond/cleanup-chromes)
 
 ### One command, any agent
 
