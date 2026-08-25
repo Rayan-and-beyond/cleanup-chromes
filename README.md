@@ -5,9 +5,6 @@
 cleanup-chromes is a skill for AI agents that reclaims disk space on macOS from throwaway test-browser caches and macOS `code_sign_clone` leftovers — often **10–60+ GB**. It deletes only hardcoded, regenerable targets. Real browser profiles and `/Applications` are hard-refused.
 
 
-
-
-
 ## 💾 The cause
 
 AI coding agents (Claude Code, Codex, Cursor, …) drive real browsers. To do that, Playwright, Puppeteer, Cypress, Selenium, and chrome-devtools-mcp each download their own Chromium builds, and macOS creates extra code-sign copies of Chrome, Brave, Edge, and OpenAI apps on top. None of these tools clean up after themselves. The leftovers pile up in known locations:
@@ -16,58 +13,6 @@ AI coding agents (Claude Code, Codex, Cursor, …) drive real browsers. To do th
 - `/private/var/folders/.../X/com.google.Chrome.code_sign_clone` — macOS code-sign clones; these alone can silently reach **38+ GB**
 
 If DaisyDisk, `du`, or Storage settings ("System Data") show gigabytes in places like these, this skill is the fix: it deletes exactly these agent-created leftovers — and nothing else. Every tool re-downloads what it needs on next use.
-
-
-
-
-
-## 🗑️ What it deletes
-
-| Location | Usually left by |
-|---|---|
-| `~/Library/Caches/ms-playwright` | Playwright |
-| `~/Library/Caches/ms-playwright-go` | Playwright Go |
-| `~/.cache/ms-playwright` | Playwright |
-| `~/.cache/puppeteer` | Puppeteer / Chrome for Testing |
-| `~/Library/Caches/Cypress` | Cypress |
-| `~/.cache/rebrowser-puppeteer` | rebrowser-puppeteer |
-| `~/.cache/selenium` | Selenium |
-| `~/.cache/chrome-devtools-mcp` | chrome-devtools-mcp |
-| `~/Library/Caches/chromium` | Chromium-based test tooling |
-| `/private/var/folders/*/*/X/*.code_sign_clone` | transient macOS code-sign clones |
-
-### Clone allowlist
-
-macOS names each clone root after the owning app's bundle identifier, so the script allowlists exact bundle IDs and maps them to an exact process-name check (`pgrep -x` — a command that merely *mentions* e.g. "Codex" in its arguments does not count as Codex running):
-
-| Bundle ID | Owner | Process guard |
-|---|---|---|
-| `com.google.Chrome` | Google Chrome | `Google Chrome` |
-| `com.openai.codex` | Codex | `Codex` |
-| `com.openai.chat` | ChatGPT | `ChatGPT` |
-| `com.brave.Browser` | Brave Browser | `Brave Browser` |
-| `com.microsoft.edgemac` | Microsoft Edge | `Microsoft Edge` |
-
-Any clone root with an unknown bundle ID is refused and reported — never deleted automatically.
-
-
-
-
-
-## 🛡️ How it stays safe
-
-Before anything is deleted, the script:
-
-- considers only the hardcoded throwaway locations above
-- hard-refuses real Chrome, Brave, and Edge profiles plus everything in `/Applications`
-- refuses unknown clone owners by default (default-deny)
-- checks open files with `lsof` and running owner apps with exact process-name matching
-- re-runs all checks immediately before each individual deletion
-
-The default mode is `scan`, so running the script with no argument is non-destructive.
-
-
-
 
 
 ## 📦 Install
@@ -118,9 +63,6 @@ gh skill install Rayan-and-beyond/cleanup-chromes
 Anything that reads the open [Agent Skills standard](https://agentskills.io) works — copy this folder into that agent's skills directory.
 
 
-
-
-
 ## ▶️ Use
 
 ### Codex
@@ -148,9 +90,6 @@ git clone https://github.com/Rayan-and-beyond/cleanup-chromes.git && cd cleanup-
 Codex runs commands in an approval sandbox: the scan is read-only — approve it, review the findings, then approve `delete`.
 
 
-
-
-
 ## 📊 What you get
 
 The scan reports every target with a size and a verdict: `SAFE`, `IN USE`, or `REFUSED` (with the reason). Deletion reports the *measured* freed space and ends with a machine-readable line:
@@ -162,7 +101,47 @@ SUMMARY mode=<scan|delete> freed_mb=<n> deleted=<n> skipped=<n> failed=<n>
 Exit codes: `0` success · `1` one or more deletions failed · `2` invalid argument. Deletion results are appended to `cleanup.log`.
 
 
+## 🗑️ What it deletes
 
+| Location | Usually left by |
+|---|---|
+| `~/Library/Caches/ms-playwright` | Playwright |
+| `~/Library/Caches/ms-playwright-go` | Playwright Go |
+| `~/.cache/ms-playwright` | Playwright |
+| `~/.cache/puppeteer` | Puppeteer / Chrome for Testing |
+| `~/Library/Caches/Cypress` | Cypress |
+| `~/.cache/rebrowser-puppeteer` | rebrowser-puppeteer |
+| `~/.cache/selenium` | Selenium |
+| `~/.cache/chrome-devtools-mcp` | chrome-devtools-mcp |
+| `~/Library/Caches/chromium` | Chromium-based test tooling |
+| `/private/var/folders/*/*/X/*.code_sign_clone` | transient macOS code-sign clones |
+
+### Clone allowlist
+
+macOS names each clone root after the owning app's bundle identifier, so the script allowlists exact bundle IDs and maps them to an exact process-name check (`pgrep -x` — a command that merely *mentions* e.g. "Codex" in its arguments does not count as Codex running):
+
+| Bundle ID | Owner | Process guard |
+|---|---|---|
+| `com.google.Chrome` | Google Chrome | `Google Chrome` |
+| `com.openai.codex` | Codex | `Codex` |
+| `com.openai.chat` | ChatGPT | `ChatGPT` |
+| `com.brave.Browser` | Brave Browser | `Brave Browser` |
+| `com.microsoft.edgemac` | Microsoft Edge | `Microsoft Edge` |
+
+Any clone root with an unknown bundle ID is refused and reported — never deleted automatically.
+
+
+## 🛡️ How it stays safe
+
+Before anything is deleted, the script:
+
+- considers only the hardcoded throwaway locations above
+- hard-refuses real Chrome, Brave, and Edge profiles plus everything in `/Applications`
+- refuses unknown clone owners by default (default-deny)
+- checks open files with `lsof` and running owner apps with exact process-name matching
+- re-runs all checks immediately before each individual deletion
+
+The default mode is `scan`, so running the script with no argument is non-destructive.
 
 
 ## ⚠️ Limits
@@ -175,17 +154,11 @@ cleanup-chromes is **not a general disk cleaner**. It touches only the hardcoded
 Deleted caches re-download the next time the relevant tool runs. `du` overstates clone sizes on APFS (copy-on-write shares blocks) — trust the script's measured `freed_mb`. A tiny check-then-delete race remains theoretically possible if a process starts at exactly the wrong instant; the script minimizes this by refreshing its checks immediately before each removal.
 
 
-
-
-
 ## Requirements
 
 - macOS
 - Bash (stock `/bin/bash` 3.2 is fully supported; the test suite targets it specifically)
 - standard macOS utilities including `lsof`, `du`, `df`, and `pgrep`
-
-
-
 
 
 ## 🧪 Development
