@@ -56,7 +56,11 @@ Ask: *"my disk is almost full, run a cleanup-chromes scan"* — or type `/cleanu
 
 ### Codex
 
-In the Codex app, run `/skill-installer` and ask it to install `cleanup-chromes` from `Rayan-and-beyond/cleanup-chromes`.
+In the Codex app, run:
+
+```text
+/skill-installer cleanup-chromes from Rayan-and-beyond/cleanup-chromes
+```
 
 Manual install — copy the skill folder to `~/.agents/skills/`:
 
