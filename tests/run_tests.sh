@@ -16,7 +16,19 @@
 # Exit codes: 0 = all tests passed/skipped-safely, 1 = at least one failure.
 set -u
 
-SCRIPT="$(cd "$(dirname "$0")/.." && pwd)/skills/cleanup-chromes/cleanup-chromes.sh"
+# Works from both layouts: the GitHub repo (skills/cleanup-chromes/) and a
+# flattened install (~/.claude/skills/cleanup-chromes/).
+SCRIPT=""
+for cand in \
+  "$(cd "$(dirname "$0")/.." && pwd)/skills/cleanup-chromes/cleanup-chromes.sh" \
+  "$(cd "$(dirname "$0")/.." && pwd)/cleanup-chromes.sh"
+do
+  [ -f "$cand" ] && SCRIPT="$cand" && break
+done
+if [ -z "$SCRIPT" ]; then
+  echo "error: cannot locate cleanup-chromes.sh relative to $(dirname "$0")" >&2
+  exit 2
+fi
 BASH_BIN="/bin/bash"
 
 pass=0; fail=0; blocked=0
