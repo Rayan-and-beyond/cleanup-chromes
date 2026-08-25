@@ -37,6 +37,13 @@ gh skill install Rayan-and-beyond/cleanup-chromes
 npx skills add Rayan-and-beyond/cleanup-chromes -a claude-code -g
 ```
 
+Or Claude Code's native plugin flow — in Claude Code, run:
+
+```text
+/plugin marketplace add Rayan-and-beyond/cleanup-chromes
+/plugin install cleanup-chromes@cleanup-chromes
+```
+
 Installs to `~/.claude/skills/cleanup-chromes`.
 
 Manual install:
@@ -47,21 +54,15 @@ git clone https://github.com/Rayan-and-beyond/cleanup-chromes.git /tmp/cc && cp 
 
 Ask: *"my disk is almost full, run a cleanup-chromes scan"* — or type `/cleanup-chromes`. Claude shows you the scan first and asks before deleting anything.
 
-### Codex CLI
+### Codex
 
-```bash
-npx skills add Rayan-and-beyond/cleanup-chromes -a codex -g
-```
+In the Codex app, run `/skill-installer` and ask it to install `cleanup-chromes` from `Rayan-and-beyond/cleanup-chromes`.
 
-Installs to `~/.agents/skills/cleanup-chromes` (Codex's user skills location).
-
-Manual install:
+Manual install — copy the skill folder to `~/.agents/skills/`:
 
 ```bash
 git clone https://github.com/Rayan-and-beyond/cleanup-chromes.git /tmp/cc && cp -r /tmp/cc/skills/cleanup-chromes ~/.agents/skills/ && rm -rf /tmp/cc
 ```
-
-Alternative — Codex's built-in installer: run `$skill-installer`, then request `cleanup-chromes` from `Rayan-and-beyond/cleanup-chromes`.
 
 Invoke with `$cleanup-chromes` or browse via `/skills`. It also activates automatically when you describe disk-space problems. Codex runs commands in an approval sandbox: the scan is read-only — approve it, review the findings, then approve `delete`.
 

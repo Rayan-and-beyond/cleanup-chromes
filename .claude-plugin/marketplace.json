@@ -1,0 +1,19 @@
+{
+  "name": "cleanup-chromes",
+  "owner": {
+    "name": "Rayan-and-beyond"
+  },
+  "plugins": [
+    {
+      "name": "cleanup-chromes",
+      "source": "./skills/cleanup-chromes",
+      "description": "Safely reclaim disk space from agent-left browser caches and macOS code_sign_clones",
+      "version": "1.0.0",
+      "author": {
+        "name": "Rayan-and-beyond"
+      },
+      "license": "MIT",
+      "keywords": ["macos", "disk-cleanup", "playwright", "puppeteer", "code-sign-clone"]
+    }
+  ]
+}
