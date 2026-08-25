@@ -4,15 +4,84 @@ A macOS Agent Skill for safely reclaiming disk space left behind by browser auto
 
 It targets known throwaway caches from Playwright, Puppeteer, Cypress, Selenium, Chromium, and chrome-devtools-mcp, plus transient macOS `*.code_sign_clone` copies. Real browser profiles and `/Applications` are hard-refused.
 
+## Is your Mac's disk space mysteriously disappearing?
+
+If you ended up here after seeing any of these, you're in the right place:
+
+- DaisyDisk / OmniDiskSweeper / `du` showing giant folders like
+  `/private/var/folders/.../X/com.google.Chrome.code_sign_clone`
+  or `com.openai.codex.code_sign_clone`
+- macOS **Storage settings** blaming tens of GBs on vague **"System Data"**
+- `~/Library/Caches/ms-playwright`, `~/.cache/puppeteer`, or `~/Library/Caches/Cypress`
+  quietly holding many gigabytes of downloaded browser builds
+- `Your startup disk is almost full` / `no space left on device` after heavy use of
+  AI coding agents (Claude Code, Codex, Cursor, ...) that drive browsers
+
+These leftovers can easily reach **10–60+ GB**. Everything this skill deletes is regenerable — tools re-download what they need on next use.
+
 ## Install
 
-Install with the Agent Skills CLI:
+[![skills.sh](https://skills.sh/b/Rayan-and-beyond/cleanup-chromes)](https://skills.sh/Rayan-and-beyond/cleanup-chromes)
+
+### One command, any agent
+
+The [Agent Skills CLI](https://github.com/vercel-labs/skills) detects which agents you have installed and offers to install into each:
 
 ```bash
 npx skills add Rayan-and-beyond/cleanup-chromes
 ```
 
-Or clone the repository and install/copy the skill using your agent's normal skill directory.
+Or with GitHub CLI v2.90+:
+
+```bash
+gh skill install Rayan-and-beyond/cleanup-chromes
+```
+
+### Claude Code
+
+```bash
+npx skills add Rayan-and-beyond/cleanup-chromes -a claude-code -g
+```
+
+Installs to `~/.claude/skills/cleanup-chromes`. Prefer manual?
+
+```bash
+git clone https://github.com/Rayan-and-beyond/cleanup-chromes.git ~/.claude/skills/cleanup-chromes
+```
+
+Then just ask naturally — *"my disk is almost full, run a cleanup-chromes scan"* — or explicitly *"use the cleanup-chromes skill"*. Claude will always show you the scan first and ask before deleting anything.
+
+### Codex CLI
+
+```bash
+npx skills add Rayan-and-beyond/cleanup-chromes -a codex -g
+```
+
+Installs to `~/.codex/skills/cleanup-chromes`. Prefer manual?
+
+```bash
+git clone https://github.com/Rayan-and-beyond/cleanup-chromes.git ~/.codex/skills/cleanup-chromes
+```
+
+Invoke with `$cleanup-chromes` or browse via `/skills`. It also triggers automatically when you describe disk-space problems. Tip: Codex runs commands in an approval sandbox — approve the `scan` freely (read-only), review its findings, then approve `delete`.
+
+### Other agents
+
+Anything that reads the open [Agent Skills standard](https://agentskills.io) works — copy this folder into that agent's skills directory.
+
+### No agent at all
+
+It's just a safe bash script:
+
+```bash
+git clone https://github.com/Rayan-and-beyond/cleanup-chromes.git && cd cleanup-chromes
+./cleanup-chromes.sh scan     # read-only, shows what's reclaimable
+./cleanup-chromes.sh delete   # removes only what passed every safety check
+```
+
+### Verify it works
+
+Run a **scan** (never deletes anything) and check for the `SUMMARY mode=scan ...` line at the end. Exit code `0` means all good.
 
 ## What it does
 
