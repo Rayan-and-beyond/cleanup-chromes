@@ -25,7 +25,7 @@ The [Agent Skills CLI](https://github.com/vercel-labs/skills) detects which agen
 npx skills add Rayan-and-beyond/cleanup-chromes
 ```
 
-Or with GitHub CLI v2.90+:
+GitHub CLI:
 
 ```bash
 gh skill install Rayan-and-beyond/cleanup-chromes
@@ -51,12 +51,7 @@ Manual install:
 ```bash
 git clone https://github.com/Rayan-and-beyond/cleanup-chromes.git /tmp/cc && cp -r /tmp/cc/skills/cleanup-chromes ~/.claude/skills/ && rm -rf /tmp/cc
 ```
-
-Ask: *"my disk is almost full, run a cleanup-chromes scan"* — or type `/cleanup-chromes`. Claude shows you the scan first and asks before deleting anything.
-
 ### Codex
-
-In the Codex app, run:
 
 ```text
 /skill-installer cleanup-chromes from Rayan-and-beyond/cleanup-chromes
@@ -68,13 +63,15 @@ Manual install — copy the skill folder to `~/.agents/skills/`:
 git clone https://github.com/Rayan-and-beyond/cleanup-chromes.git /tmp/cc && cp -r /tmp/cc/skills/cleanup-chromes ~/.agents/skills/ && rm -rf /tmp/cc
 ```
 
-Invoke with `$cleanup-chromes` or browse via `/skills`. It also activates automatically when you describe disk-space problems. Codex runs commands in an approval sandbox: the scan is read-only — approve it, review the findings, then approve `delete`.
-
 ### Other agents
 
 Anything that reads the open [Agent Skills standard](https://agentskills.io) works — copy this folder into that agent's skills directory.
 
-### No agent at all
+## Use 
+
+Ask: *"my disk is almost full, run a cleanup-chromes scan"* — or type `/cleanup-chromes`. Your agent shows you the scan first and asks before deleting anything.
+
+## No agent at all
 
 Run the script directly:
 
