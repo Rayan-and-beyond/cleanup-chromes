@@ -29,6 +29,12 @@ The [Agent Skills CLI](https://github.com/vercel-labs/skills) detects which agen
 npx skills add Rayan-and-beyond/cleanup-chromes
 ```
 
+Or with GitHub CLI v2.90+:
+
+```bash
+gh skill install Rayan-and-beyond/cleanup-chromes
+```
+
 ### Claude Code
 
 ```bash
