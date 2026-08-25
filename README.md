@@ -21,8 +21,6 @@ These leftovers can easily reach **10–60+ GB**. Everything this skill deletes 
 
 ## Install
 
-[![Agent Skill](https://img.shields.io/badge/agent_skill-macos_cleanup-2ea44f)](https://skills.sh/Rayan-and-beyond/cleanup-chromes)
-
 ### One command, any agent
 
 The [Agent Skills CLI](https://github.com/vercel-labs/skills) detects which agents you have installed and offers to install into each:
