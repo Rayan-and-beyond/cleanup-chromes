@@ -117,6 +117,8 @@ Deletion results are appended to `cleanup.log` beside the script.
 
 ## Notes
 
+- **Never quote a clone root's size as expected gain.** Scan output marks clone sizes `apparent` because APFS copy-on-write shares blocks with the app bundle; the only true number is the df-measured `freed_mb` reported after `delete`. Saying "this will free 38 GB" because `du` said so is wrong and misleads the user.
+
 - Browser automation tools have their own cache-management behavior, but large persistent caches can still remain across versions, agents, and abandoned installs.
 - Deleted browser binaries may re-download the next time the corresponding tool runs.
 - `code_sign_clone` sizes reported by `du` are apparent sizes. APFS copy-on-write clones share blocks, so actual reclaimed space can be much smaller. Trust the script's before/after `df` measurement.

@@ -130,13 +130,14 @@ looks_dangerous() {  # refuse anything that resembles real user data
 # Cache guards keep `pgrep -f` on purpose — there we WANT to catch any command
 # line that mentions the tool.
 classify_target() {
-  C_SIZE="$(human "$1")"; C_STATUS="SAFE"; C_REASON=""; C_PAT=""; C_PGREP_FL=""
+  C_SIZE="$(human "$1")"; C_STATUS="SAFE"; C_REASON=""; C_PAT=""; C_PGREP_FL=""; C_IS_CLONE=0
   if looks_dangerous "$1"; then
     C_STATUS="REFUSE"; C_REASON="looks like real data"
     return
   fi
   case "$1" in
     *.code_sign_clone)
+      C_IS_CLONE=1
       C_PAT="$(clone_guard_pattern "$(basename "${1%.code_sign_clone}")")"
       if [ -z "$C_PAT" ]; then
         C_STATUS="REFUSE"
@@ -186,11 +187,19 @@ run_cleanup() {
         echo "  ⛔ REFUSE ($C_REASON): $t"
         ;;
       INUSE)
-        echo "  ⏭  IN USE  ($C_SIZE): $t   [$C_REASON]"
+        if [ "$C_IS_CLONE" = "1" ]; then
+          echo "  ⏭  IN USE  (apparent ${C_SIZE})*: $t   [$C_REASON]"
+        else
+          echo "  ⏭  IN USE  ($C_SIZE): $t   [$C_REASON]"
+        fi
         skip_list+=("$t")
         ;;
       *)
-        echo "  ✅ SAFE    ($C_SIZE): $t"
+        if [ "$C_IS_CLONE" = "1" ]; then
+          echo "  ✅ SAFE    (apparent ${C_SIZE})*: $t"
+        else
+          echo "  ✅ SAFE    ($C_SIZE): $t"
+        fi
         safe_list+=("$t")
         ;;
     esac
@@ -200,8 +209,22 @@ run_cleanup() {
   if [ "${#safe_list[@]}" -eq 0 ]; then
     echo "Nothing safe to delete right now."
   else
-    echo -n "Reclaimable from SAFE items: "
-    du -sch ${safe_list[@]+"${safe_list[@]}"} 2>/dev/null | tail -1 | cut -f1
+    cache_list=(); clone_count=0
+    for t in ${safe_list[@]+"${safe_list[@]}"}; do
+      case "$t" in
+        *.code_sign_clone) clone_count=$((clone_count + 1)) ;;
+        *) cache_list+=(${cache_list[@]+"${cache_list[@]}"} "$t") ;;
+      esac
+    done
+    if [ "${#cache_list[@]}" -gt 0 ]; then
+      echo -n "Reclaimable from SAFE caches: "
+      du -sch ${cache_list[@]+"${cache_list[@]}"} 2>/dev/null | tail -1 | cut -f1
+    fi
+    if [ "$clone_count" -gt 0 ]; then
+      echo "* Clone sizes are APPARENT only: APFS shares blocks with the app bundle, so the"
+      echo "  real gain cannot be known before deletion. The SUMMARY's df-measured freed_mb"
+      echo "  is the only true number."
+    fi
   fi
 
   freed_mb=0

@@ -10,7 +10,7 @@ cleanup-chromes is a skill for AI agents that reclaims disk space on macOS from 
 AI coding agents (Claude Code, Codex, Cursor, …) drive real browsers. To do that, Playwright, Puppeteer, Cypress, Selenium, and chrome-devtools-mcp each download their own Chromium builds, and macOS creates extra code-sign copies of Chrome, Brave, Edge, and OpenAI apps on top. None of these tools clean up after themselves. The leftovers pile up in known locations:
 
 - `~/Library/Caches/ms-playwright`, `~/.cache/puppeteer`, `~/Library/Caches/Cypress` — downloaded browser builds, several GB each
-- `/private/var/folders/.../X/com.google.Chrome.code_sign_clone` — macOS code-sign clones; these alone can silently reach **38+ GB**
+- `/private/var/folders/.../X/com.google.Chrome.code_sign_clone` — macOS code-sign clones; Disk Utility and `du` will show these at **38+ GB**, but that is the *apparent* size (APFS shares blocks with the app itself) — the real gain is smaller and is measured only after deletion
 
 If DaisyDisk, `du`, or Storage settings ("System Data") show gigabytes in places like these, this skill is the fix: it deletes exactly these agent-created leftovers — and nothing else. Every tool re-downloads what it needs on next use.
 
@@ -91,7 +91,7 @@ git clone https://github.com/Rayan-and-beyond/cleanup-chromes.git && cd cleanup-
 
 ## 📊 What you get
 
-The scan reports every target with a size and a verdict: `SAFE`, `IN USE`, or `REFUSED` (with the reason). Deletion reports the *measured* freed space and ends with a machine-readable line:
+The scan reports every target with a size and a verdict: `SAFE`, `IN USE`, or `REFUSED` (with the reason). Clone sizes are marked `apparent` — APFS shares their blocks with the app bundle, so only the delete summary's df-measured `freed_mb` is the true gain. Deletion ends with a machine-readable line:
 
 ```text
 SUMMARY mode=<scan|delete> freed_mb=<n> deleted=<n> skipped=<n> failed=<n>

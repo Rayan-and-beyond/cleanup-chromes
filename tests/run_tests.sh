@@ -312,6 +312,37 @@ t11_clone_guard_ignores_cmdline_substring_decoys() {
   esac
 }
 
+t12_scan_does_not_tease_with_apparent_clone_sizes() {
+  note "T12: scan never shows a bare du size for clone roots — no promised GB that delete can't deliver"
+  if ! script_supports_glob_hook; then
+    record_blocked "T12 (script lacks CLEANUP_CHROMES_CLONE_GLOB)"
+    return
+  fi
+  make_fake_clone "com.microsoft.edgemac" || { note "  (setup failed)"; return; }
+  # Put 5 MB of unique data in the fake clone; du will report ~5.0M apparent.
+  dd if=/dev/zero of="$X_DIR/com.microsoft.edgemac.code_sign_clone/blob.bin" count=5120 bs=1024 2>/dev/null
+  local glob="/private/var/folders/*/*/X/com.microsoft.edgemac.code_sign_clone"
+
+  run_script scan "$glob"
+  local line total
+  line="$(printf '%s\n' "$OUT" | grep 'com.microsoft.edgemac.code_sign_clone' | head -1)"
+  total="$(printf '%s\n' "$OUT" | grep 'Clone sizes are APPARENT' | head -1)"
+
+  case "$line" in
+    *"apparent"*) ;;
+    "") record_fail "T12 (clone absent from scan output)"; return;;
+    *) record_fail "T12 (clone size shown without 'apparent' qualifier): $line"; return;;
+  esac
+  # The clone's 5 MB must NOT appear as a bare size token on its line (e.g. "( 5.0M)").
+  case "$line" in
+    *"( 5.0M)"*|*"(5.0M)"*|*"( 4.9M)"*|*"(5.1M)") record_fail "T12 (bare apparent size teased): $line"; return;;
+  esac
+  case "$total" in
+    *"Clone sizes are APPARENT"*) record_pass "T12";;
+    *) record_fail "T12 (reclaimable line doesn't disclose clone exclusion): $total";;
+  esac
+}
+
 # --- Runner -----------------------------------------------------------------
 note "== cleanup-chromes test suite ($($BASH_BIN --version | head -1)) =="
 note ""
@@ -326,6 +357,7 @@ t8_unit_bundle_id_table_and_cache_guards
 t9_unit_looks_dangerous_still_refuses_real_profiles
 t10_cli_contract_unchanged
 t11_clone_guard_ignores_cmdline_substring_decoys
+t12_scan_does_not_tease_with_apparent_clone_sizes
 
 note ""
 note "== Results: $pass passed, $fail failed, $blocked blocked-unsafe =="
