@@ -174,4 +174,4 @@ New cleanup targets must be regenerable caches or verified clone owners — a re
 
 ---
 
-`1.0.0` · [MIT](./LICENSE) License
+[MIT](./LICENSE) License
