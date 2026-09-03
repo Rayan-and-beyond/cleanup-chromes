@@ -1,370 +1,165 @@
 #!/bin/bash
-# run_tests.sh — test harness for cleanup-chromes.sh
-#
-# ALWAYS run via stock macOS bash:  /bin/bash tests/run_tests.sh
-# Homebrew/newer bash will NOT reproduce the Bash 3.2 empty-array bugs.
-#
-# SAFETY MODEL:
-#   - scan-mode tests are read-only and always safe to run
-#   - delete-mode tests are BLOCKED unless the script-under-test supports the
-#     CLEANUP_CHROMES_CLONE_GLOB override; without it, a delete run could act
-#     on the real machine's caches/clones, so the harness refuses to proceed
-#   - integration tests create fake clone roots named after FAKE bundle IDs
-#     (or a fake com.microsoft.edgemac root) inside the real per-user X temp
-#     dir — harmless — and remove them again on exit
-#
-# Exit codes: 0 = all tests passed/skipped-safely, 1 = at least one failure.
+# run_tests.sh — fixtures for cleanup-chromes.sh kill-orphans (and basic disk modes).
+# Stock macOS bash 3.2 compatible.
 set -u
 
-# Works from both layouts: the GitHub repo (skills/cleanup-chromes/) and a
-# flattened install (~/.claude/skills/cleanup-chromes/).
-SCRIPT=""
-for cand in \
-  "$(cd "$(dirname "$0")/.." && pwd)/skills/cleanup-chromes/cleanup-chromes.sh" \
-  "$(cd "$(dirname "$0")/.." && pwd)/cleanup-chromes.sh"
-do
-  [ -f "$cand" ] && SCRIPT="$cand" && break
-done
-if [ -z "$SCRIPT" ]; then
-  echo "error: cannot locate cleanup-chromes.sh relative to $(dirname "$0")" >&2
-  exit 2
-fi
-BASH_BIN="/bin/bash"
-
-pass=0; fail=0; blocked=0
-RC=0; OUT=""; ERR=""
-X_DIR=""
-FAKE_HOME=""
-
-note() { printf '%s\n' "$*"; }
-record_pass() { pass=$((pass+1)); note "  ✅ PASS: $1"; }
-record_fail() { fail=$((fail+1)); note "  ❌ FAIL: $1"; }
-record_blocked() { blocked=$((blocked+1)); note "  ⛔ BLOCKED-UNSAFE: $1"; }
-
-cleanup_traps() {
-  [ -n "$X_DIR" ] || return 0
-  remove_test_clone "com.definitely.not.real.app42"
-  remove_test_clone "com.microsoft.edgemac"
-  remove_test_clone "com.openai.codex"
-  [ -n "$FAKE_HOME" ] && rm -rf "$FAKE_HOME"
-  return 0
-}
-
-# Remove ONLY clones this harness created (they carry our marker subdir);
-# a same-named real-world clone without the marker is left alone.
-remove_test_clone() {
-  local d="$X_DIR/$1.code_sign_clone"
-  [ -d "$d/code_sign_clone.testbundle" ] && rm -rf "$d"
-  return 0
-}
-trap cleanup_traps EXIT
-
-# --- Environment sanity -----------------------------------------------------
-bash_major="$($BASH_BIN -c 'echo "${BASH_VERSION%%.*}"')"
-if [ "$bash_major" -ge 4 ] 2>/dev/null; then
-  note "WARNING: $BASH_BIN is version $BASH_VERSION — Bash 3.2 crash bugs won't reproduce here."
-fi
-
-if $BASH_BIN -c 'set -u; arr=(); for i in "${arr[@]}"; do :; done' >/dev/null 2>&1; then
-  note "NOTE: this bash does NOT crash on empty arrays — array-crash tests lose teeth here."
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Locate the script: sibling of tests/ (flat skill layout) or ../skills/cleanup-chromes (repo layout)
+if [ -f "$SCRIPT_DIR/../cleanup-chromes.sh" ]; then
+  SCRIPT="$SCRIPT_DIR/../cleanup-chromes.sh"
+elif [ -f "$SCRIPT_DIR/../skills/cleanup-chromes/cleanup-chromes.sh" ]; then
+  SCRIPT="$SCRIPT_DIR/../skills/cleanup-chromes/cleanup-chromes.sh"
 else
-  note "NOTE: $BASH_BIN crashes on empty-array expansion (Bash < 4.4) — bugs are reproducible."
+  echo "error: cannot locate cleanup-chromes.sh relative to tests/" >&2
+  exit 1
 fi
+TMP="$(mktemp -d /tmp/cleanup-chromes-test.XXXXXX)"
+trap 'rm -rf "$TMP"' EXIT
 
-for d in /private/var/folders/*/*/X; do
-  [ -d "$d" ] && X_DIR="$d" && break
-done
-
-FAKE_HOME="$(mktemp -d "${TMPDIR:-/tmp}/cleanup-chromes-test.XXXXXX")"
-
-make_fake_clone() { # $1 = basename without .code_sign_clone suffix
-  if [ -z "$X_DIR" ]; then note "  (no X_DIR found — cannot create fake clone)"; return 1; fi
-  mkdir -p "$X_DIR/$1.code_sign_clone/code_sign_clone.testbundle" 2>/dev/null
-}
-
-script_supports_glob_hook() {
-  grep -q 'CLEANUP_CHROMES_CLONE_GLOB' "$SCRIPT"
-}
-
-# run_script <mode> <clone-glob-or-empty> ; fills RC/OUT/ERR globals
-run_script() {
-  local mode="$1" glob="$2"
-  local tf
-  tf="$(mktemp)"
-  HOME="$FAKE_HOME" CLEANUP_CHROMES_CLONE_GLOB="$glob" \
-    $BASH_BIN "$SCRIPT" "$mode" >"$tf.out" 2>"$tf.err"
-  RC=$?
-  OUT="$(cat "$tf.out")"
-  ERR="$(cat "$tf.err")"
-  rm -f "$tf" "$tf.out" "$tf.err"
-}
-
-# --- Tests ------------------------------------------------------------------
-
-t1_scan_with_zero_targets_does_not_crash() {
-  note "T1: scan with zero matching targets survives stock Bash 3.2 (empty arrays)"
-  run_script scan "/nonexistent/*.code_sign_clone"
-  if [ "$RC" -ne 0 ]; then record_fail "T1 (exit=$RC)"; return; fi
-  case "$ERR" in *unbound*) record_fail "T1 (crashed: $ERR)"; return;; esac
-  case "$OUT" in
-    *"Nothing safe"*) ;;
-    *) record_fail "T1 (missing 'Nothing safe' — glob override not honored?)"; return;;
+PASS=0; FAIL=0
+ok()   { PASS=$((PASS+1)); echo "  ok: $1"; }
+fail() { FAIL=$((FAIL+1)); echo "  FAIL: $1"; }
+assert_contains() {  # $1=haystack $2=needle $3=label
+  case "$1" in
+    *"$2"*) ok "$3" ;;
+    *) fail "$3 — expected to contain: $2" ;;
   esac
-  case "$OUT" in *SUMMARY\ mode=scan*) ;; *) record_fail "T1 (missing SUMMARY line)"; return;; esac
-  record_pass "T1"
 }
-
-t2_delete_with_zero_targets_does_not_crash() {
-  note "T2: delete with zero matching targets survives stock Bash 3.2 (empty safe_list loop)"
-  if ! script_supports_glob_hook; then
-    record_blocked "T2 (script lacks CLEANUP_CHROMES_CLONE_GLOB — running delete could touch real data)"
-    return
-  fi
-  run_script delete "/nonexistent/*.code_sign_clone"
-  if [ "$RC" -ne 0 ]; then record_fail "T2 (exit=$RC)"; return; fi
-  case "$ERR" in *unbound*) record_fail "T2 (crashed: $ERR)"; return;; esac
-  case "$OUT" in
-    *"SUMMARY mode=delete freed_mb=0 deleted=0 skipped=0 failed=0"*) ;;
-    *) record_fail "T2 (unexpected SUMMARY: $(printf '%s\n' "$OUT" | grep SUMMARY))"; return;;
-  esac
-  record_pass "T2"
-}
-
-t3_chrome_clone_marked_in_use_while_chrome_runs() {
-  note "T3: com.google.Chrome.code_sign_clone is IN USE while Google Chrome runs (real machine)"
-  if ! pgrep -x "Google Chrome" >/dev/null 2>&1; then
-    note "  (skipped content-check: Chrome is not running)"
-    return
-  fi
-  run_script scan ""
-  local line
-  line="$(printf '%s\n' "$OUT" | grep 'com.google.Chrome.code_sign_clone' | head -1)"
-  if [ -z "$line" ]; then record_fail "T3 (clone root not reported at all)"; return; fi
-  case "$line" in *"SAFE"*) record_fail "T3 (marked SAFE while Chrome runs!): $line"; return;; esac
-  case "$line" in
-    *"IN USE"*"Google Chrome"*) record_pass "T3";;
-    *) record_fail "T3 (expected IN USE + 'Google Chrome'): $line";;
+assert_not_contains() {
+  case "$1" in
+    *"$2"*) fail "$3 — expected NOT to contain: $2" ;;
+    *) ok "$3" ;;
   esac
 }
 
-t4_brave_clone_follows_live_brave_state() {
-  note "T4: com.brave.Browser.code_sign_clone tracks whether Brave Browser is running"
-  run_script scan ""
-  local line
-  line="$(printf '%s\n' "$OUT" | grep 'com.brave.Browser.code_sign_clone' | head -1)"
-  if [ -z "$line" ]; then note "  (skipped: no Brave clone root present)"; return; fi
-  if pgrep -x "Brave Browser" >/dev/null 2>&1; then
-    case "$line" in *"IN USE"*) record_pass "T4";; *) record_fail "T4 ($line)";; esac
-  else
-    case "$line" in *"SAFE"*) record_pass "T4";; *) record_fail "T4 ($line)";; esac
-  fi
+# ---- fixture builder --------------------------------------------------------
+# Each test defines PS_FIXTURE lines "PID PPID ELAPSED CMD" (spaces, converted
+# to tabs; only the first 3 fields are split — the rest is the command).
+make_ps_hook() {
+  local f="$TMP/ps_hook_$1.sh"
+  cat > "$f" <<EOF
+#!/bin/bash
+while IFS= read -r line; do
+  [ -n "\$line" ] || continue
+  pid=\${line%% *}; rest=\${line#* }
+  ppid=\${rest%% *}; rest=\${rest#* }
+  etime=\${rest%% *}; cmd=\${rest#* }
+  printf '%s\t%s\t%s\t%s\n' "\$pid" "\$ppid" "\$etime" "\$cmd"
+done < "$TMP/ps_fixture_$1.txt"
+EOF
+  chmod +x "$f"
+  echo "$f"
 }
 
-t5_unknown_owner_clone_is_refused_in_scan() {
-  note "T5: unknown-bundle-ID clone root is REFUSEd in scan (default-deny)"
-  make_fake_clone "com.definitely.not.real.app42" || { note "  (setup failed)"; return; }
-  run_script scan ""
-  local line
-  line="$(printf '%s\n' "$OUT" | grep 'com.definitely.not.real.app42.code_sign_clone' | head -1)"
-  case "$line" in
-    *REFUSE*) record_pass "T5";;
-    "") record_fail "T5 (unknown-owner clone absent from output)";;
-    *) record_fail "T5 (unknown owner offered as SAFE): $line";;
-  esac
+make_lsof_hook() {
+  local f="$TMP/lsof_hook_$1.sh"
+  cat > "$f" <<EOF
+#!/bin/bash
+# args: -i :PORT  (we only emulate the port check)
+if [ "\$1" = "-i" ] && [ "\$2" = ":$2" ]; then
+  cat "$TMP/lsof_fixture_$1.txt" 2>/dev/null
+fi
+EOF
+  chmod +x "$f"
+  echo "$f"
 }
 
-t6_unknown_owner_clone_survives_delete_mode() {
-  note "T6: delete mode refuses and preserves an unknown-bundle-ID clone root"
-  if ! script_supports_glob_hook; then
-    record_blocked "T6 (script lacks CLEANUP_CHROMES_CLONE_GLOB — running delete could touch real data)"
-    return
-  fi
-  make_fake_clone "com.definitely.not.real.app42" || { note "  (setup failed)"; return; }
-  run_script delete "/private/var/folders/*/*/X/com.definitely.not.real.app42.code_sign_clone"
-  if [ ! -d "$X_DIR/com.definitely.not.real.app42.code_sign_clone" ]; then
-    record_fail "T6 (unknown-owner clone was DELETED)"
-    return
-  fi
-  case "$OUT" in
-    *REFUSE*"com.definitely.not.real.app42"*) ;;
-    *) record_fail "T6 (delete run did not report REFUSE for unknown owner)"; return;;
-  esac
-  case "$(printf '%s\n' "$OUT" | grep SUMMARY)" in
-    *"deleted=0"*) record_pass "T6";;
-    *) record_fail "T6 (deleted!=0): $(printf '%s\n' "$OUT" | grep SUMMARY)";;
-  esac
+run_scan() {   # read-only kill-orphans scan with given fixture id
+  local id="$1"
+  CLEANUP_CHROMES_PS_HOOK="$(make_ps_hook "$id")" \
+  CLEANUP_CHROMES_LSOF_HOOK="$(make_lsof_hook "$id" 9222)" \
+  /bin/bash "$SCRIPT" kill-orphans 2>&1
 }
 
-t7_known_idle_fake_clone_is_safe_then_deleted() {
-  note "T7: known bundle ID (edgemac), app idle — fake clone is SAFE in scan, removed by delete"
-  if pgrep -x "Microsoft Edge" >/dev/null 2>&1; then
-    note "  (skipped: Microsoft Edge is running)"
-    return
-  fi
-  make_fake_clone "com.microsoft.edgemac" || { note "  (setup failed)"; return; }
-  local glob="/private/var/folders/*/*/X/com.microsoft.edgemac.code_sign_clone"
+# ---- fixtures ---------------------------------------------------------------
+# 1: the real-world scenario from today: orphaned node playwright daemon ->
+#    headless chrome (GPU + renderer children), all reparented or daemon-rooted.
+cat > "$TMP/ps_fixture_1.txt" <<'EOF'
+3910 1 02:28:12 node /Users/x/.npm/_npx/abc/node_modules/playwright-core/lib/entry/cliDaemon.js photonfinish
+3911 3910 02:25:36 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome --headless --user-data-dir=/var/folders/xx/xxxxxxxxxxxxxxx/T/playwright_chromiumdev_profile-WTVyBC --remote-debugging-pipe --no-startup-window
+3932 3911 02:25:30 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.75/Helpers/Google Chrome Helper (GPU).app/Contents/MacOS/Google Chrome Helper (GPU) --type=gpu-process --headless --user-data-dir=/var/folders/xx/xxxxxxxxxxxxxxx/T/playwright_chromiumdev_profile-WTVyBC
+3944 3911 02:25:30 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.75/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) --type=renderer --headless --user-data-dir=/var/folders/xx/xxxxxxxxxxxxxxx/T/playwright_chromiumdev_profile-WTVyBC
+EOF
+: > "$TMP/lsof_fixture_1.txt"
 
-  run_script scan "$glob"
-  local line
-  line="$(printf '%s\n' "$OUT" | grep 'com.microsoft.edgemac.code_sign_clone' | head -1)"
-  case "$line" in
-    *"SAFE"*) ;;
-    "") record_fail "T7 (scan did not surface fake edgemac clone — glob override broken?)"; return;;
-    *) record_fail "T7 (not SAFE while Edge idle): $line"; return;;
-  esac
+# 2: live session — daemon owned by a live shell, browser under it. Must NOT kill.
+cat > "$TMP/ps_fixture_2.txt" <<'EOF'
+200 1 3:00:00 zsh
+201 200 2:00:00 node /Users/x/.npm/_npx/abc/node_modules/playwright-core/lib/entry/cliDaemon.js
+202 201 1:00:00 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome --headless --user-data-dir=/var/folders/6_/x/T/playwright_chromiumdev_profile-AAA --remote-debugging-pipe
+EOF
+: > "$TMP/lsof_fixture_2.txt"
 
-  if ! script_supports_glob_hook; then
-    record_blocked "T7-delete (script lacks glob override; scan half passed)"
-    return
-  fi
-  run_script delete "$glob"
-  if [ "$RC" -ne 0 ]; then record_fail "T7 (delete exit=$RC)"; return; fi
-  case "$(printf '%s\n' "$OUT" | grep SUMMARY)" in
-    *"deleted=1"*) ;;
-    *) record_fail "T7 (deleted!=1): $(printf '%s\n' "$OUT" | grep SUMMARY)"; return;;
-  esac
-  if [ -d "$X_DIR/com.microsoft.edgemac.code_sign_clone" ]; then
-    record_fail "T7 (fake clone still present after delete)"
-  else
-    record_pass "T7"
-  fi
-}
+# 3: headless browser with live CDP port connection — must NOT kill.
+cat > "$TMP/ps_fixture_3.txt" <<'EOF'
+300 1 1:00:00 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome --headless --user-data-dir=/var/folders/6_/x/T/someprofile --remote-debugging-port=9222
+EOF
+cat > "$TMP/lsof_fixture_3.txt" <<'EOF'
+node    555  user  47u  IPv4 0xabc 0t0  TCP localhost:54321->localhost:9222 (ESTABLISHED)
+EOF
 
-t8_unit_bundle_id_table_and_cache_guards() {
-  note "T8: unit — clone bundle-ID allowlist table + legacy cache process guards"
-  local probe
-  probe="$($BASH_BIN -c '
-    source "'"$SCRIPT"'" >/dev/null 2>&1 || exit 97
-    c1="$(clone_guard_pattern com.google.Chrome 2>/dev/null)"
-    c2="$(clone_guard_pattern com.openai.codex 2>/dev/null)"
-    c3="$(clone_guard_pattern com.openai.chat 2>/dev/null)"
-    c4="$(clone_guard_pattern com.brave.Browser 2>/dev/null)"
-    c5="$(clone_guard_pattern com.microsoft.edgemac 2>/dev/null)"
-    c6="$(clone_guard_pattern com.unknown.things.app 2>/dev/null)"
-    g1="$(guard_proc_for "$HOME/.cache/chrome-devtools-mcp" 2>/dev/null)"
-    g2="$(guard_proc_for "$HOME/.cache/puppeteer" 2>/dev/null)"
-    printf "%s|%s|%s|%s|%s|%s|%s|%s" "$c1" "$c2" "$c3" "$c4" "$c5" "$c6" "$g1" "$g2"
-  ' 2>/dev/null)"
-  case "$probe" in
-    "Google Chrome|Codex|ChatGPT|Brave Browser|Microsoft Edge||chrome-devtools|puppeteer")
-      record_pass "T8";;
-    "")
-      record_fail "T8 (could not source script / functions missing)";;
-    *)
-      record_fail "T8 (got: $probe)";;
-  esac
-}
+# 4: headless browser, port open but NO established connection — killable.
+cat > "$TMP/ps_fixture_4.txt" <<'EOF'
+400 1 1:00:00 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome --headless --user-data-dir=/var/folders/6_/x/T/puppeteer_dev_chrome_profile-XYZ --remote-debugging-port=9222
+EOF
+: > "$TMP/lsof_fixture_4.txt"
 
-t9_unit_looks_dangerous_still_refuses_real_profiles() {
-  note "T9: unit — looks_dangerous refusals unchanged"
-  local probe
-  probe="$($BASH_BIN -c '
-    source "'"$SCRIPT"'" >/dev/null 2>&1 || exit 97
-    d1=0; looks_dangerous "$HOME/Library/Application Support/Google/Chrome" && d1=1
-    d2=0; looks_dangerous "/Applications/Safari.app" && d2=1
-    d3=0; looks_dangerous "$HOME" && d3=1
-    d4=0; looks_dangerous "$HOME/.cache/puppeteer" && d4=1
-    printf "%s%s%s%s" "$d1" "$d2" "$d3" "$d4"
-  ' 2>/dev/null)"
-  case "$probe" in
-    "1110") record_pass "T9";;
-    "")     record_fail "T9 (could not source script)";;
-    *)      record_fail "T9 (got: $probe)";;
-  esac
-}
+# 5: headless browser with REAL profile dir — must NOT kill.
+cat > "$TMP/ps_fixture_5.txt" <<'EOF'
+500 1 1:00:00 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome --headless --user-data-dir=/Users/x/Library/Application Support/Google/Chrome --remote-debugging-pipe
+EOF
+: > "$TMP/lsof_fixture_5.txt"
 
-t10_cli_contract_unchanged() {
-  note "T10: CLI contract — bad arg exits 2, --help exits 0, no-arg defaults to scan"
-  $BASH_BIN "$SCRIPT" bogus >/dev/null 2>&1; local r1=$?
-  $BASH_BIN "$SCRIPT" --help >/dev/null 2>&1; local r2=$?
-  run_script "" "/nonexistent/*.code_sign_clone"
-  case "$r1:$r2:$RC" in
-    "2:0:0") record_pass "T10";;
-    *)       record_fail "T10 (bogus=$r1 help=$r2 default=$RC)";;
-  esac
-}
+# 6: headless browser with no fingerprint anywhere — UNRECOGNIZED.
+cat > "$TMP/ps_fixture_6.txt" <<'EOF'
+600 1 1:00:00 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome --headless --user-data-dir=/var/folders/6_/x/T/unknownprofile --remote-debugging-pipe
+EOF
+: > "$TMP/lsof_fixture_6.txt"
 
-t11_clone_guard_ignores_cmdline_substring_decoys() {
-  note "T11: clone owner guard uses EXACT process names — a decoy whose args merely contain the name must not trigger it"
-  if pgrep -ix "Codex" >/dev/null 2>&1; then
-    note "  (skipped: the real Codex app is running — a fake codex clone would be correctly guarded as IN USE)"
-    return
-  fi
-  if ! script_supports_glob_hook; then
-    record_blocked "T11 (script lacks CLEANUP_CHROMES_CLONE_GLOB)"
-    return
-  fi
-  make_fake_clone "com.openai.codex" || { note "  (setup failed)"; return; }
-  local glob="/private/var/folders/*/*/X/com.openai.codex.code_sign_clone"
+# 7: not headless — silently skipped (REJECT).
+cat > "$TMP/ps_fixture_7.txt" <<'EOF'
+700 1 1:00:00 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome --user-data-dir=/var/folders/6_/x/T/visibleprofile --remote-debugging-pipe
+EOF
+: > "$TMP/lsof_fixture_7.txt"
 
-  # Decoy: process named "bash"/"sleep", but its ARGV contains the exact word
-  # "Codex". pgrep -f would match it; pgrep -x must not.
-  /bin/bash -c 'sleep 30' Codex &
-  local decoy_pid=$!
-  trap 'kill '"$decoy_pid"' 2>/dev/null; cleanup_traps' EXIT
+# 8: no orphans at all.
+cat > "$TMP/ps_fixture_8.txt" <<'EOF'
+800 1 1:00:00 WindowServer
+EOF
+: > "$TMP/lsof_fixture_8.txt"
 
-  run_script scan "$glob"
-  local line
-  line="$(printf '%s\n' "$OUT" | grep 'com.openai.codex.code_sign_clone' | head -1)"
-  kill "$decoy_pid" 2>/dev/null
-  wait "$decoy_pid" 2>/dev/null
+echo "== kill-orphans fixture tests =="
+echo
 
-  case "$line" in
-    *"SAFE"*) record_pass "T11";;
-    "") record_fail "T11 (fake codex clone absent from scan output)";;
-    *) record_fail "T11 (cmdline decoy triggered the guard — clone not SAFE): $line";;
-  esac
-}
+T="$(run_scan 1)"
+echo "--- fixture 1 output ---"; echo "$T"; echo "------------------------"
+assert_contains "$T" "CONFIRMED ORPHAN: pid 3911" "f1: browser root confirmed"
+assert_contains "$T" "kill order: 3910 3932 3944 3911" "f1: daemon killed first, children before root"
+assert_contains "$T" "confirmed=1" "f1: summary count"
 
-t12_scan_does_not_tease_with_apparent_clone_sizes() {
-  note "T12: scan never shows a bare du size for clone roots — no promised GB that delete can't deliver"
-  if ! script_supports_glob_hook; then
-    record_blocked "T12 (script lacks CLEANUP_CHROMES_CLONE_GLOB)"
-    return
-  fi
-  make_fake_clone "com.microsoft.edgemac" || { note "  (setup failed)"; return; }
-  # Put 5 MB of unique data in the fake clone; du will report ~5.0M apparent.
-  dd if=/dev/zero of="$X_DIR/com.microsoft.edgemac.code_sign_clone/blob.bin" count=5120 bs=1024 2>/dev/null
-  local glob="/private/var/folders/*/*/X/com.microsoft.edgemac.code_sign_clone"
+T="$(run_scan 2)"
+assert_not_contains "$T" "CONFIRMED ORPHAN" "f2: live session not killed"
+assert_contains "$T" "No orphaned" "f2: reports none"
 
-  run_script scan "$glob"
-  local line total
-  line="$(printf '%s\n' "$OUT" | grep 'com.microsoft.edgemac.code_sign_clone' | head -1)"
-  total="$(printf '%s\n' "$OUT" | grep 'Clone sizes are APPARENT' | head -1)"
+T="$(run_scan 3)"
+assert_not_contains "$T" "CONFIRMED ORPHAN" "f3: live CDP connection not killed"
 
-  case "$line" in
-    *"apparent"*) ;;
-    "") record_fail "T12 (clone absent from scan output)"; return;;
-    *) record_fail "T12 (clone size shown without 'apparent' qualifier): $line"; return;;
-  esac
-  # The clone's 5 MB must NOT appear as a bare size token on its line (e.g. "( 5.0M)").
-  case "$line" in
-    *"( 5.0M)"*|*"(5.0M)"*|*"( 4.9M)"*|*"(5.1M)") record_fail "T12 (bare apparent size teased): $line"; return;;
-  esac
-  case "$total" in
-    *"Clone sizes are APPARENT"*) record_pass "T12";;
-    *) record_fail "T12 (reclaimable line doesn't disclose clone exclusion): $total";;
-  esac
-}
+T="$(run_scan 4)"
+assert_contains "$T" "CONFIRMED ORPHAN: pid 400" "f4: idle port (no peer) confirmed"
 
-# --- Runner -----------------------------------------------------------------
-note "== cleanup-chromes test suite ($($BASH_BIN --version | head -1)) =="
-note ""
-t1_scan_with_zero_targets_does_not_crash
-t2_delete_with_zero_targets_does_not_crash
-t3_chrome_clone_marked_in_use_while_chrome_runs
-t4_brave_clone_follows_live_brave_state
-t5_unknown_owner_clone_is_refused_in_scan
-t6_unknown_owner_clone_survives_delete_mode
-t7_known_idle_fake_clone_is_safe_then_deleted
-t8_unit_bundle_id_table_and_cache_guards
-t9_unit_looks_dangerous_still_refuses_real_profiles
-t10_cli_contract_unchanged
-t11_clone_guard_ignores_cmdline_substring_decoys
-t12_scan_does_not_tease_with_apparent_clone_sizes
+T="$(run_scan 5)"
+assert_not_contains "$T" "CONFIRMED ORPHAN" "f5: real profile never killed"
 
-note ""
-note "== Results: $pass passed, $fail failed, $blocked blocked-unsafe =="
+T="$(run_scan 6)"
+assert_contains "$T" "UNRECOGNIZED" "f6: fingerprintless tree reported"
+assert_not_contains "$T" "CONFIRMED ORPHAN" "f6: fingerprintless tree not killed"
 
-[ "$fail" -eq 0 ]
-exit $?
+T="$(run_scan 7)"
+assert_not_contains "$T" "CONFIRMED ORPHAN" "f7: non-headless rejected"
+
+T="$(run_scan 8)"
+assert_contains "$T" "No orphaned" "f8: clean system reports none"
+
+echo
+echo "== tests: $PASS passed, $FAIL failed =="
+[ "$FAIL" -eq 0 ]

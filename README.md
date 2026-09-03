@@ -1,8 +1,8 @@
 # cleanup-chromes
 
-**Deletes the browser binaries your coding agents leave behind.**
+**Deletes the browser binaries your coding agents leave behind — and kills the ones still burning CPU after their agent died.**
 
-cleanup-chromes is a skill for AI agents that reclaims disk space on macOS from throwaway test-browser caches and macOS `code_sign_clone` leftovers — often **10–60+ GB**. It deletes only hardcoded, regenerable targets. Real browser profiles and `/Applications` are hard-refused.
+cleanup-chromes is a skill for AI agents that reclaims disk space on macOS from throwaway test-browser caches and macOS `code_sign_clone` leftovers — often **10–60+ GB** — and terminates orphaned automation-browser process trees that heat up your Mac while you do nothing. It deletes only hardcoded, regenerable targets and kills only process trees that pass every orphan gate. Real browser profiles, `/Applications`, and live sessions are hard-refused.
 
 
 ## 💾 The cause
@@ -13,6 +13,10 @@ AI coding agents (Claude Code, Codex, Cursor, …) drive real browsers. To do th
 - `/private/var/folders/.../X/com.google.Chrome.code_sign_clone` — macOS code-sign clones; Disk Utility and `du` will show these at **38+ GB**, but that is the *apparent* size (APFS shares blocks with the app itself) — the real gain is smaller and is measured only after deletion
 
 If DaisyDisk, `du`, or Storage settings ("System Data") show gigabytes in places like these, this skill is the fix: it deletes exactly these agent-created leftovers — and nothing else. Every tool re-downloads what it needs on next use.
+
+### 🔥 Or: why your Mac is hot while you're doing nothing
+
+When a coding agent's session crashes or gets killed, the browser it was driving doesn't die with it. A headless Chrome and its Playwright daemon keep running for hours — spinning at 40–60% CPU on work nothing will ever collect — and on a fanless MacBook Air that alone makes the chassis hot. Busy CPU proves nothing: the orphan's debugging pipe is dead, so it can never be driven again. `kill-orphans` finds these trees and shuts them down, but only after every gate agrees they are truly abandoned (see [🧟 Orphaned browser processes](#-orphaned-browser-processes-kill-orphans)).
 
 
 ## 📦 Install
@@ -77,14 +81,15 @@ $cleanup-chromes — run a scan of agent browser leftovers
 /cleanup-chromes run a scan of agent browser leftovers
 ```
 
-Or just ask: *"my disk is almost full, run a cleanup-chromes scan"*. Your agent shows you the scan first and asks before deleting anything.
+Or just ask: *"my disk is almost full, run a cleanup-chromes scan"* — or *"my Mac is hot and nothing is running, check for orphaned agent browsers"*. Your agent shows you the scan first and asks before deleting or killing anything.
 
 ### Terminal (no agent)
 
 ```bash
 git clone https://github.com/Rayan-and-beyond/cleanup-chromes.git && cd cleanup-chromes
-./skills/cleanup-chromes/cleanup-chromes.sh scan     # read-only, shows what's reclaimable
-./skills/cleanup-chromes/cleanup-chromes.sh delete   # removes only what passed every check
+./skills/cleanup-chromes/cleanup-chromes.sh scan           # read-only, shows what's reclaimable
+./skills/cleanup-chromes/cleanup-chromes.sh delete         # removes only what passed every check
+./skills/cleanup-chromes/cleanup-chromes.sh kill-orphans   # reports orphaned browser trees (dry-run)
 ```
 
 
@@ -98,6 +103,33 @@ SUMMARY mode=<scan|delete> freed_mb=<n> deleted=<n> skipped=<n> failed=<n>
 ```
 
 Exit codes: `0` success · `1` one or more deletions failed · `2` invalid argument. Deletion results are appended to `cleanup.log`.
+
+
+## 🧟 Orphaned browser processes (`kill-orphans`)
+
+The second half of the skill. If your Mac runs hot with nothing open, an abandoned agent session is a likely culprit — check with:
+
+```bash
+./skills/cleanup-chromes/cleanup-chromes.sh kill-orphans             # dry-run report
+./skills/cleanup-chromes/cleanup-chromes.sh kill-orphans --do-it     # terminate confirmed orphans
+```
+
+A process tree is confirmed orphaned only when **all four gates pass** (default-deny):
+
+| Gate | Meaning |
+|---|---|
+| 1. Browser + profile | command has `--headless` and its `--user-data-dir` lives in a temp dir (`/var/folders`, `/tmp`) — killing a temp profile can never lose personal browser data |
+| 2. Dead launcher | every process above the browser is launchd-adopted (`PPID=1`) or itself an orphaned automation daemon — a live parent anchors the tree to an active session and rejects it |
+| 3. No driver | `--remote-debugging-pipe` (far end was the dead parent → provably unusable) or `--remote-debugging-port` with no `ESTABLISHED` connection in `lsof` |
+| 4. Known fingerprint | some command in the tree matches a known automation stack (Playwright, Puppeteer, Selenium, Cypress, chrome-devtools, rebrowser) — anything else is reported `UNRECOGNIZED` and never killed |
+
+Kills are graceful (SIGTERM, 5s grace, then SIGKILL), ordered orchestrators-first so nothing respawns mid-cleanup, guarded against PID recycling, and logged to `cleanup.log`. The summary line:
+
+```text
+SUMMARY mode=kill-orphans confirmed=<n> killed=<n> grace_killed=<n> unrecognized=<n> deleted=n/a skipped=0 failed=0
+```
+
+`scan`/`delete` never kill processes; `kill-orphans` never deletes files.
 
 
 ## 🗑️ What it deletes
@@ -140,17 +172,24 @@ Before anything is deleted, the script:
 - checks open files with `lsof` and running owner apps with exact process-name matching
 - re-runs all checks immediately before each individual deletion
 
-The default mode is `scan`, so running the script with no argument is non-destructive.
+Before anything is killed, `kill-orphans`:
+
+- requires all four orphan gates above to pass (default-deny — unmatched trees are reported, never signalled)
+- protects PID 1, the script itself, and its parents
+- re-verifies each pid's live command immediately before signalling (a recycled pid is skipped)
+- logs every `--do-it` run with the root pid and full kill list
+
+The default mode is `scan`, so running the script with no argument is non-destructive. `kill-orphans` is likewise a dry-run until you pass `--do-it`.
 
 
 ## ⚠️ Limits
 
-cleanup-chromes is **not a general disk cleaner**. It touches only the hardcoded targets above and nothing else.
+cleanup-chromes is **not a general disk cleaner** and **not a general task manager**. It touches only the hardcoded targets above and kills only trees that pass every orphan gate.
 
 > [!NOTE]
-> **If your disk is full for a different reason (Photos, Mail, Xcode, …), this skill will not help — and will not touch anything related.**
+> **If your disk is full for a different reason (Photos, Mail, Xcode, …), or your Mac runs hot for a different reason (a runaway app of your own, malware, …), this skill will not help — and will not touch anything related.**
 
-Deleted caches re-download the next time the relevant tool runs. `du` overstates clone sizes on APFS (copy-on-write shares blocks) — trust the script's measured `freed_mb`. A tiny check-then-delete race remains theoretically possible if a process starts at exactly the wrong instant; the script minimizes this by refreshing its checks immediately before each removal.
+Deleted caches re-download the next time the relevant tool runs. `du` overstates clone sizes on APFS (copy-on-write shares blocks) — trust the script's measured `freed_mb`. A tiny check-then-delete race remains theoretically possible if a process starts at exactly the wrong instant; the script minimizes this by refreshing its checks immediately before each removal (and before each kill signal).
 
 
 ## Requirements
@@ -168,7 +207,7 @@ Run the test suite with **stock macOS bash** (newer Homebrew bash will not repro
 /bin/bash tests/run_tests.sh
 ```
 
-Scan-mode tests are read-only. Delete-mode tests self-block unless the script-under-test supports the `CLEANUP_CHROMES_CLONE_GLOB` isolation override, so running the suite against an un-hooked older revision can never touch real data.
+Scan-mode and kill-orphans tests are read-only — fixtures inject fake process tables via the `CLEANUP_CHROMES_PS_HOOK` and `CLEANUP_CHROMES_LSOF_HOOK` isolation overrides, so the suite never inspects or signals real processes. Delete-mode tests self-block unless the script-under-test supports the `CLEANUP_CHROMES_CLONE_GLOB` isolation override, so running the suite against an un-hooked older revision can never touch real data.
 
 New cleanup targets must be regenerable caches or verified clone owners — a real bundle ID plus its exact process name, proven with `pgrep -x "<name>"` while the app is running.
 
