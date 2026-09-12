@@ -1,0 +1,18 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  skill-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Syntax check (macOS bash 3.2 compatible, no bash 4+ features)
+        run: bash -n skills/cleanup-chromes/cleanup-chromes.sh && bash -n tests/run_tests.sh
+      - name: Run fixture tests
+        run: bash tests/run_tests.sh
