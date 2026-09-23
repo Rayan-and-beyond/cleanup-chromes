@@ -116,7 +116,8 @@ cat > "$TMP/ps_fixture_6.txt" <<'EOF'
 EOF
 : > "$TMP/lsof_fixture_6.txt"
 
-# 7: not headless — silently skipped (REJECT).
+# 7: headed browser with no known automation fingerprint — UNRECOGNIZED,
+#    never killed. Headed alone is no longer a rejection criterion.
 cat > "$TMP/ps_fixture_7.txt" <<'EOF'
 700 1 1:00:00 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome --user-data-dir=/var/folders/6_/x/T/visibleprofile --remote-debugging-pipe
 EOF
@@ -127,6 +128,14 @@ cat > "$TMP/ps_fixture_8.txt" <<'EOF'
 800 1 1:00:00 WindowServer
 EOF
 : > "$TMP/lsof_fixture_8.txt"
+
+# 9: real headed Playwright orphan observed in the wild: launchd-adopted
+#    cliDaemon -> Chrome with temp Playwright profile + debugging pipe.
+cat > "$TMP/ps_fixture_9.txt" <<'EOF'
+38426 1 1-02:00:00 /opt/homebrew/Cellar/node@24/24.20.0/bin/node /Users/x/.npm/_npx/31e32ef8478fbf80/node_modules/playwright-core/lib/entry/cliDaemon.js loader-light --headed
+38427 38426 1-02:00:00 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome --disable-field-trial-config --enable-features=CDPScreenshotNewSurface --user-data-dir=/var/folders/6_/x/T/playwright_chromiumdev_profile-F6t3LH --remote-debugging-pipe --no-startup-window
+EOF
+: > "$TMP/lsof_fixture_9.txt"
 
 echo "== kill-orphans fixture tests =="
 echo
@@ -155,10 +164,16 @@ assert_contains "$T" "UNRECOGNIZED" "f6: fingerprintless tree reported"
 assert_not_contains "$T" "CONFIRMED ORPHAN" "f6: fingerprintless tree not killed"
 
 T="$(run_scan 7)"
-assert_not_contains "$T" "CONFIRMED ORPHAN" "f7: non-headless rejected"
+assert_contains "$T" "UNRECOGNIZED" "f7: headed unknown automation is reported, not killed"
+assert_not_contains "$T" "CONFIRMED ORPHAN" "f7: headed unknown automation not killed"
 
 T="$(run_scan 8)"
 assert_contains "$T" "No orphaned" "f8: clean system reports none"
+
+T="$(run_scan 9)"
+assert_contains "$T" "CONFIRMED ORPHAN: pid 38427" "f9: headed Playwright orphan confirmed"
+assert_contains "$T" "kill order: 38426 38427" "f9: headed Playwright daemon killed before browser"
+assert_contains "$T" "confirmed=1" "f9: summary count"
 
 echo
 echo "== tests: $PASS passed, $FAIL failed =="
