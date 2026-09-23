@@ -16,9 +16,9 @@
 #   - real browser profiles / /Applications are hard-refused
 #   - "delete" re-runs the same safety checks as "scan" — it does not depend on
 #     scan having been run first, so either mode is safe to call on its own
-#   - "kill-orphans" terminates headless automation browser trees only after
-#     ALL of its gates pass (headless+temp profile, dead launcher, no driver,
-#     known fingerprint) — see the kill-orphans section below; without
+#   - "kill-orphans" terminates automation browser trees only after ALL of
+#     its gates pass (temp automation profile, dead launcher, no driver,
+#     known fingerprint) — works for both headless and headed sessions; without
 #     --do-it it is a read-only dry-run
 #
 # Exit codes: 0 = success (nothing to do, or all deletions succeeded)
@@ -184,9 +184,10 @@ classify_target() {
 # work, so idle time is deliberately NOT a criterion.
 #
 # A tree is confirmed orphaned ONLY when ALL four gates pass (default-deny):
-#   Gate 1  BROWSER+PROFILE  command has --headless AND --user-data-dir points
-#           into a temp location (/var/folders, /tmp, $TMPDIR). Killing a temp
-#           profile can never destroy personal browser data.
+#   Gate 1  BROWSER+PROFILE  command has an automation debugging channel AND
+#           --user-data-dir points into a temp location (/var/folders, /tmp,
+#           $TMPDIR). This covers headless AND headed automation browsers while
+#           keeping real browser profiles out of scope.
 #   Gate 2  DEAD LAUNCHER    every process ABOVE the browser in the tree is
 #           itself orphaned (PPID=1): a dead launchd-reparented chain proves
 #           no living launcher session owns the browser. Any live ancestor
@@ -319,7 +320,7 @@ ancestor_chain() {
   done
 }
 
-# Classify the tree rooted at a headless-browser process $1.
+# Classify the tree rooted at an automation-browser process $1.
 # Sets globals: K_STATUS (CONFIRMED|UNRECOGNIZED|REJECT), K_REASON,
 #   KILL_PIDS (ordered: orphaned orchestrators topmost-first, then browser
 #   descendants, then the browser root — daemons die first so nothing can
@@ -336,11 +337,9 @@ classify_orphan_tree() {
     1|"$$"|"${PPID:-0}") K_REASON="protected process"; return ;;
   esac
 
-  # Gate 1: headless + temp profile.
-  case "$K_CMD" in
-    *--headless*) : ;;
-    *) K_REASON="not headless"; return ;;
-  esac
+  # Gate 1: temp automation profile. Headed browsers are eligible too; the
+  # debugging-channel gate below plus the fingerprint and dead-launcher gates
+  # prevent ordinary user Chrome windows from being classified as orphans.
   local udd
   udd="$(extract_user_data_dir "$K_CMD")"
   if [ -z "$udd" ] || ! is_temp_profile "$udd"; then
@@ -403,15 +402,233 @@ run_kill_orphans() {
   PS_LINES="$(list_procs)"
   SCANNED_PS_LINES="$PS_LINES"
   echo "Scanning for orphaned automation browser trees"
-  echo "(headless + temp profile + dead launcher + no driver)…"
+  echo "(temp automation profile + dead launcher + no driver)…"
   echo
 
   local candidates=()
   local pid ppid etime cmd
-  while IFS=$'\t' read -r pid ppid etime cmd; do
+  while IFS=
+
+  local confirmed=0 unrecognized=0 killed=0 grace_killed=0
+  local seen=""
+  local cpid
+  for cpid in ${candidates[@]+"${candidates[@]}"}; do
+    case " $seen " in *" $cpid "*) continue ;; esac
+    seen="$seen $cpid"
+
+    classify_orphan_tree "$cpid"
+    case "$K_STATUS" in
+      CONFIRMED)
+        confirmed=$((confirmed + 1))
+        echo "  🎯 CONFIRMED ORPHAN: pid $cpid (up ${K_ELAPSED:-?})"
+        echo "     cmd: $(printf '%s' "$K_CMD" | cut -c1-140)…"
+        echo "     kill order: $(printf '%s' "$KILL_PIDS" | tr -s ' ')"
+        if [ "$DO_IT" = "1" ]; then
+          local kp
+          for kp in $KILL_PIDS; do
+            # PID-recycling guard: re-read the live process table and only
+            # kill if the pid still runs the exact command we classified.
+            # (field_of uses PS_LINES, so refresh it first.)
+            PS_LINES="$(list_procs)"
+            local live_cmd expected_cmd
+            live_cmd="$(field_of "$kp" 4)"
+            expected_cmd="$(awk -v p="$kp" 'BEGIN{FS="\t"} $1==p{print $4; exit}' <<< "$SCANNED_PS_LINES")"
+            if [ -z "$live_cmd" ] || [ "$live_cmd" != "$expected_cmd" ]; then
+              echo "     ↪ skip $kp (changed identity or exited — pid recycled?)"
+              continue
+            fi
+            kill "$kp" 2>/dev/null && echo "     ↪ SIGTERM → $kp"
+          done
+          sleep 5
+          for kp in $KILL_PIDS; do
+            if kill -0 "$kp" 2>/dev/null; then
+              if kill -9 "$kp" 2>/dev/null; then
+                echo "     ↪ SIGKILL → $kp (survived TERM)"
+                grace_killed=$((grace_killed + 1))
+              fi
+            fi
+          done
+          killed=$((killed + 1))
+          printf '%s\tkill-orphans\troot=%s\tpids=%s\n' \
+            "$(date '+%Y-%m-%d %H:%M:%S')" "$cpid" "$(printf '%s' "$KILL_PIDS" | tr -s ' ')" >> "$LOG_FILE" 2>/dev/null
+        fi
+        ;;
+      UNRECOGNIZED)
+        unrecognized=$((unrecognized + 1))
+        echo "  ❓ UNRECOGNIZED (not killed — review manually): pid $cpid"
+        echo "     cmd: $(printf '%s' "$K_CMD" | cut -c1-140)"
+        echo
+        ;;
+      REJECT)
+        : # gate failed; routine headless process someone still owns
+        ;;
+    esac
+  done
+
+  echo
+  if [ "$confirmed" -eq 0 ] && [ "$unrecognized" -eq 0 ]; then
+    echo "No orphaned automation browser trees found."
+  fi
+  echo "SUMMARY mode=kill-orphans confirmed=$confirmed killed=$killed grace_killed=$grace_killed unrecognized=$unrecognized deleted=n/a skipped=0 failed=0"
+  return 0
+}
+
+
+
+main() {
+  local MODE="${1:-scan}"
+  case "$MODE" in
+    kill-orphans)
+      shift
+      run_kill_orphans "$@"
+      return $?
+      ;;
+    -h|--help|"")
+      run_cleanup "$MODE"
+      return $?
+      ;;
+    *)
+      run_cleanup "$MODE"
+      return $?
+      ;;
+  esac
+}
+
+run_cleanup() {
+  MODE="${1:-scan}"
+  case "$MODE" in
+    scan|delete) ;;
+    -h|--help) usage; return 0 ;;
+    *) echo "Error: unrecognized argument '$MODE'" >&2; usage; return 2 ;;
+  esac
+
+  echo "Checking what's currently in use (lsof)…"
+  OPEN="$(lsof -w -Fn 2>/dev/null | sed -n 's/^n//p')"
+
+  # Derive the volume to measure free space on from $HOME itself, rather than a
+  # hardcoded path — this stays correct even if $HOME lives on a secondary or
+  # external volume.
+  AVAIL_BEFORE="$(df -k "$HOME" | awk 'NR==2{print $4}')"
+  safe_list=(); skip_list=(); fail_list=()
+
+  echo
+  echo "== Targets =="
+  for t in "${TARGETS[@]}"; do
+    [ -e "$t" ] || continue
+    classify_target "$t"
+    case "$C_STATUS" in
+      REFUSE)
+        echo "  ⛔ REFUSE ($C_REASON): $t"
+        ;;
+      INUSE)
+        if [ "$C_IS_CLONE" = "1" ]; then
+          echo "  ⏭  IN USE  (apparent ${C_SIZE})*: $t   [$C_REASON]"
+        else
+          echo "  ⏭  IN USE  ($C_SIZE): $t   [$C_REASON]"
+        fi
+        skip_list+=("$t")
+        ;;
+      *)
+        if [ "$C_IS_CLONE" = "1" ]; then
+          echo "  ✅ SAFE    (apparent ${C_SIZE})*: $t"
+        else
+          echo "  ✅ SAFE    ($C_SIZE): $t"
+        fi
+        safe_list+=("$t")
+        ;;
+    esac
+  done
+
+  echo
+  if [ "${#safe_list[@]}" -eq 0 ]; then
+    echo "Nothing safe to delete right now."
+  else
+    cache_list=(); clone_count=0
+    for t in ${safe_list[@]+"${safe_list[@]}"}; do
+      case "$t" in
+        *.code_sign_clone) clone_count=$((clone_count + 1)) ;;
+        *) cache_list+=(${cache_list[@]+"${cache_list[@]}"} "$t") ;;
+      esac
+    done
+    if [ "${#cache_list[@]}" -gt 0 ]; then
+      echo -n "Reclaimable from SAFE caches: "
+      du -sch ${cache_list[@]+"${cache_list[@]}"} 2>/dev/null | tail -1 | cut -f1
+    fi
+    if [ "$clone_count" -gt 0 ]; then
+      echo "* Clone sizes are APPARENT only: APFS shares blocks with the app bundle, so the"
+      echo "  real gain cannot be known before deletion. The SUMMARY's df-measured freed_mb"
+      echo "  is the only true number."
+    fi
+  fi
+
+  freed_mb=0
+  deleted_count=0
+
+  if [ "$MODE" = "delete" ]; then
+    echo
+    echo "== Deleting SAFE items =="
+    for t in ${safe_list[@]+"${safe_list[@]}"}; do
+      # Re-check immediately before destructive action. A target may have been
+      # idle during the initial scan and become active while the scan output
+      # was being reviewed.
+      refresh_open_files
+      classify_target "$t"
+      if [ "$C_STATUS" != "SAFE" ]; then
+        echo "  ⏭  SKIP (became $C_STATUS): $t   [$C_REASON]"
+        skip_list+=("$t")
+        continue
+      fi
+
+      if rm -rf "$t"; then
+        echo "  🗑  deleted: $t"
+        deleted_count=$((deleted_count + 1))
+        printf '%s\tdeleted\t%s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$t" >> "$LOG_FILE" 2>/dev/null
+      else
+        echo "  ⚠️  failed to delete: $t"
+        fail_list+=("$t")
+        printf '%s\tfailed\t%s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$t" >> "$LOG_FILE" 2>/dev/null
+      fi
+    done
+    AVAIL_AFTER="$(df -k "$HOME" | awk 'NR==2{print $4}')"
+    freed_mb=$(( (AVAIL_AFTER - AVAIL_BEFORE) / 1024 ))
+    echo
+    echo "Freed ~${freed_mb} MB. Free space now:"
+    df -h "$HOME" | tail -1
+  else
+    echo "(scan only — re-run with 'delete' to remove the SAFE items above)"
+  fi
+
+  if [ "${#skip_list[@]}" -gt 0 ]; then
+    echo
+    echo "Skipped ${#skip_list[@]} in-use item(s). Quit the app/test that's using them, then re-run."
+  fi
+
+  if [ "${#fail_list[@]}" -gt 0 ]; then
+    echo
+    echo "${#fail_list[@]} item(s) failed to delete — check permissions on the paths listed above."
+  fi
+
+  # Machine-readable summary — safe to grep/parse regardless of the human-readable output above.
+  echo
+  echo "SUMMARY mode=$MODE freed_mb=$freed_mb deleted=$deleted_count skipped=${#skip_list[@]} failed=${#fail_list[@]}"
+
+  [ "${#fail_list[@]}" -eq 0 ]
+}
+
+# Only execute when run directly; sourcing (e.g. by tests/) defines functions
+# without side effects.
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  main "$@"
+  exit $?
+fi
+\t' read -r pid ppid etime cmd; do
     [ -n "${pid:-}" ] || continue
+    # A browser controlled by an automation driver has both a temporary
+    # user-data-dir and a CDP channel. Do not require --headless: Playwright
+    # can intentionally launch headed Chrome and leave it orphaned too.
     case "$cmd" in
-      *--headless*) candidates+=("${candidates[@]+"${candidates[@]}"}" "$pid") ;;
+      *--user-data-dir=*--remote-debugging-pipe*|*--user-data-dir=*--remote-debugging-port=*)
+        candidates+=("${candidates[@]+"${candidates[@]}"}" "$pid") ;;
     esac
   done <<< "$PS_LINES"
 
