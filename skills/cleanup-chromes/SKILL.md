@@ -79,7 +79,7 @@ The script is `cleanup-chromes.sh` in this skill directory.
 
 ### Orphaned browser processes (kill-orphans)
 
-An automation browser becomes an ORPHAN when the agent session that launched it died without cleanup: the headless Chrome tree and its orchestrator daemons (e.g. `node …/playwright-core/lib/entry/cliDaemon.js`) keep running forever, burning CPU and heating fanless Macs. Classic symptom: "my Mac is hot/overheating while I'm doing nothing."
+An automation browser becomes an ORPHAN when the agent session that launched it died without cleanup: the headed or headless Chrome tree and its orchestrator daemons (e.g. `node …/playwright-core/lib/entry/cliDaemon.js`) keep running forever, burning CPU and heating fanless Macs. Classic symptom: "my Mac is hot/overheating while I'm doing nothing."
 
 **Busy CPU does NOT mean "in use."** An orphan can spin at 100% CPU on queued work indefinitely, so activity is deliberately NOT a criterion.
 
@@ -94,7 +94,7 @@ A tree is CONFIRMED only when ALL four gates pass (default-deny):
 
 | Gate | Meaning |
 |---|---|
-| 1. BROWSER+PROFILE | command has `--headless` AND `--user-data-dir` under a temp dir (`/var/folders`, `/tmp`, `$TMPDIR`) — killing a temp profile can never lose personal browser data |
+| 1. BROWSER+PROFILE | command has an automation debugging channel AND `--user-data-dir` under a temp dir (`/var/folders`, `/tmp`, `$TMPDIR`) — supports headed and headless automation while excluding real browser profiles |
 | 2. DEAD LAUNCHER | the ancestor chain above the browser consists only of launchd-adopted (PPID=1) or fingerprinted automation daemons; any live non-automation parent anchors it to an active session and rejects the tree |
 | 3. NO DRIVER | `--remote-debugging-pipe` (far end was the dead parent → provably unusable), OR `--remote-debugging-port` with no ESTABLISHED lsof connection, OR no debugging channel at all |
 | 4. KNOWN FINGERPRINT | some command in the tree matches a known automation stack (playwright, puppeteer, chrome-devtools, selenium, cypress, rebrowser). Unmatched trees are reported UNRECOGNIZED and never killed |
@@ -160,7 +160,7 @@ Deletion results and kill actions are appended to `cleanup.log` beside the scrip
 - Each target is checked again immediately before `rm -rf`.
 - `scan` is the default mode and is read-only.
 - Unknown arguments are rejected.
-- kill-orphans adds the same default-deny discipline to processes: four independent gates must all pass, self/parent/PID-1 are protected, PID recycling is guarded against, and only known automation fingerprints are ever signalled.
+- kill-orphans adds the same default-deny discipline to processes: four independent gates must all pass, self/parent/PID-1 are protected, PID recycling is guarded against, and only known automation fingerprints are ever signalled. Headed automation is eligible when it uses a temp profile and CDP channel; ordinary browser profiles remain out of scope.
 - Tests: run with stock macOS bash via `/bin/bash tests/run_tests.sh` (fixtures inject fake process tables via `CLEANUP_CHROMES_PS_HOOK` / `CLEANUP_CHROMES_LSOF_HOOK`).
 
 ## Notes
